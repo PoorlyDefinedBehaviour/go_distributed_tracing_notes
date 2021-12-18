@@ -1,4 +1,4 @@
-package http
+package reqwest
 
 import (
 	"bytes"
@@ -8,15 +8,20 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+
+	"github.com/pkg/errors"
 )
 
 type RequestBuilder struct {
 	client   *http.Client
+	ctx      context.Context
 	method   string
+	endpoint string
 	request  *http.Request
 	response *http.Response
 	query    url.Values
 	err      error
+	headers  map[string][]string
 }
 
 func (builder *RequestBuilder) makeRequest() {
@@ -30,8 +35,35 @@ func (builder *RequestBuilder) makeRequest() {
 	builder.response = response
 }
 
-func (builder *RequestBuilder) Send() *ResponseBuilder {
-	return &ResponseBuilder{requestBuilder: builder}
+func (builder *RequestBuilder) Header(key, value string) *RequestBuilder {
+	if builder.headers == nil {
+		builder.headers = make(map[string][]string)
+	}
+
+	builder.headers[key] = append(builder.headers[key], value)
+
+	return builder
+}
+
+func (builder *RequestBuilder) Build() *ResponseBuilder {
+	out := &ResponseBuilder{requestBuilder: builder}
+
+	if builder.err != nil {
+		out.requestBuilder.err = errors.WithStack(builder.err)
+		return out
+	}
+
+	req, err := http.NewRequest(builder.method, builder.endpoint, nil)
+	if err != nil {
+		out.requestBuilder.err = errors.WithStack(err)
+		return out
+	}
+
+	req = req.WithContext(builder.ctx)
+
+	req.Header = builder.headers
+
+	return &ResponseBuilder{requestBuilder: builder, request: req}
 }
 
 type ImpureRequestBuilder struct {
@@ -39,7 +71,8 @@ type ImpureRequestBuilder struct {
 }
 
 func (builder *ImpureRequestBuilder) Header(key, value string) *ImpureRequestBuilder {
-	builder.request.Header.Set(key, value)
+	builder.RequestBuilder.Header(key, value)
+
 	return builder
 }
 
@@ -69,6 +102,11 @@ func (builder *ImpureRequestBuilder) JSON(body interface{}) *ImpureRequestBuilde
 
 type ResponseBuilder struct {
 	requestBuilder *RequestBuilder
+	request        *http.Request
+}
+
+func (builder *ResponseBuilder) Request() *http.Request {
+	return builder.request
 }
 
 func (builder *ResponseBuilder) JSON(out interface{}) error {
@@ -101,10 +139,10 @@ func POST(ctx context.Context, endpoint string) *ImpureRequestBuilder {
 
 	return &ImpureRequestBuilder{
 		RequestBuilder: RequestBuilder{
+			ctx:     ctx,
 			request: req,
 			client:  http.DefaultClient,
 			method:  http.MethodPost,
-			query:   url.Values{},
 			err:     err,
 		},
 	}
@@ -115,22 +153,19 @@ type PureRequestBuilder struct {
 }
 
 func (builder *PureRequestBuilder) Header(key, value string) *PureRequestBuilder {
-	builder.request.Header.Set(key, value)
+	builder.RequestBuilder.Header(key, value)
 	return builder
 }
 
 func GET(ctx context.Context, endpoint string) *PureRequestBuilder {
-	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
-
-	req = req.WithContext(ctx)
 
 	return &PureRequestBuilder{
 		RequestBuilder: RequestBuilder{
-			request: req,
-			client:  http.DefaultClient,
-			method:  http.MethodGet,
-			query:   url.Values{},
-			err:     err,
+			ctx:      ctx,
+			endpoint: endpoint,
+			client:   http.DefaultClient,
+			method:   http.MethodGet,
+			query:    url.Values{},
 		},
 	}
 }

@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"kata/src/http"
 	"kata/src/logger"
+	"kata/src/reqwest"
 
 	"github.com/google/uuid"
 )
@@ -22,9 +22,9 @@ func main() {
 
 	repos := make([]map[string]interface{}, 0)
 
-	err := http.GET(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos").
+	err := reqwest.GET(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos").
 		Header("key", "value").
-		Send().
+		Build().
 		JSON(&repos)
 	if err != nil {
 		panic(err)

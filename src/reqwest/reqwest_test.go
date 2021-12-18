@@ -3,6 +3,7 @@ package reqwest
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/pkg/errors"
@@ -82,6 +83,43 @@ func Test_Text(t *testing.T) {
 		assert.NoError(t, err)
 
 		assert.JSONEq(t, `{"foo":"bar"}`, body)
+	})
+}
+
+func Test_Bytes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns error if an error happened in the process", func(t *testing.T) {
+		t.Parallel()
+
+		builder := GET(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos")
+		expectedErr := errors.New("some error")
+		builder.err = expectedErr
+
+		_, err := builder.Build().Bytes()
+
+		assert.True(t, errors.Is(err, expectedErr))
+	})
+
+	t.Run("returns response body as []byte", func(t *testing.T) {
+		t.Parallel()
+
+		defer gock.Off()
+
+		const endpoint = "http://foo.com"
+
+		gock.New(endpoint).
+			Get("/").
+			Reply(200).
+			Body(strings.NewReader("hello world"))
+
+		body, err := GET(context.Background(), endpoint).
+			Build().
+			Bytes()
+
+		assert.NoError(t, err)
+
+		assert.Equal(t, []byte("hello world"), body)
 	})
 }
 

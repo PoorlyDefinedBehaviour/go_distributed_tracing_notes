@@ -116,10 +116,10 @@ func (builder *ResponseBuilder) makeRequest() {
 	builder.response = response
 }
 
-func (builder *ResponseBuilder) Text() (string, error) {
+func (builder *ResponseBuilder) Bytes() ([]byte, error) {
 	builder.makeRequest()
 
-	var out string
+	var out []byte
 
 	if builder.err != nil {
 		return out, errors.WithStack(builder.err)
@@ -127,15 +127,23 @@ func (builder *ResponseBuilder) Text() (string, error) {
 
 	defer builder.response.Body.Close()
 
-	body, err := ioutil.ReadAll(builder.response.Body)
+	out, err := ioutil.ReadAll(builder.response.Body)
 	if err != nil {
 		builder.err = errors.WithStack(err)
 		return out, builder.err
 	}
 
-	out = string(body)
-
 	return out, nil
+}
+
+func (builder *ResponseBuilder) Text() (string, error) {
+	out, err := builder.Bytes()
+	if err != nil {
+		builder.err = errors.WithStack(err)
+		return string(out), builder.err
+	}
+
+	return string(out), nil
 }
 
 func (builder *ResponseBuilder) JSON(out interface{}) error {

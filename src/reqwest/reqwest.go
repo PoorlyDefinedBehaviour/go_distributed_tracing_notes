@@ -20,13 +20,26 @@ type RequestBuilder struct {
 	request  *http.Request
 	response *http.Response
 	query    url.Values
-	err      error
 	headers  http.Header
 	body     io.Reader
+	err      error
 }
 
 func (builder *RequestBuilder) Header(key, value string) *RequestBuilder {
 	builder.headers[key] = append(builder.headers[key], value)
+
+	return builder
+}
+
+func (builder *RequestBuilder) Query(key string, value interface{}) *RequestBuilder {
+	switch value := value.(type) {
+	case string:
+		builder.query.Add(key, value)
+	case []string:
+		for _, v := range value {
+			builder.query.Add(key, v)
+		}
+	}
 
 	return builder
 }
@@ -52,6 +65,8 @@ func (builder *RequestBuilder) Build() *ResponseBuilder {
 	if len(builder.headers) > 0 {
 		req.Header = builder.headers
 	}
+
+	req.URL.RawQuery = builder.query.Encode()
 
 	out.request = req
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -109,6 +110,25 @@ func Test_PureRequestBuilder_Header(t *testing.T) {
 		}
 
 		assert.EqualValues(t, expected, request.Header)
+	})
+}
+
+func Test_PureRequestBuilder_Query(t *testing.T) {
+	t.Parallel()
+
+	t.Run("adds query string to request url", func(t *testing.T) {
+		request := GET(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos").
+			Query("key1", "value1").
+			Query("key2", []string{"value1", "value2"}).
+			Build().
+			Request()
+
+		expected := url.Values{
+			"key1": {"value1"},
+			"key2": {"value1", "value2"},
+		}
+
+		assert.EqualValues(t, expected, request.URL.Query())
 	})
 }
 

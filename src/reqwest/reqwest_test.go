@@ -3,15 +3,21 @@ package reqwest
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/IQ-tech/go-datagen"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/h2non/gock.v1"
 )
+
+func randomEndpoint() string {
+	return fmt.Sprintf("http://localhost:500/users/%d", datagen.ID())
+}
 
 func Test_CreatesRequestBuilder(t *testing.T) {
 	t.Parallel()
@@ -20,7 +26,7 @@ func Test_CreatesRequestBuilder(t *testing.T) {
 		t.Parallel()
 
 		ctx := context.Background()
-		endpoint := "http://localhost:5000"
+		endpoint := randomEndpoint()
 
 		builder := GET(ctx, endpoint)
 
@@ -37,7 +43,7 @@ func Test_CreatesRequestBuilder(t *testing.T) {
 		t.Parallel()
 
 		ctx := context.Background()
-		endpoint := "http://localhost:5000"
+		endpoint := randomEndpoint()
 
 		builder := POST(ctx, endpoint)
 
@@ -54,7 +60,7 @@ func Test_CreatesRequestBuilder(t *testing.T) {
 		t.Parallel()
 
 		ctx := context.Background()
-		endpoint := "http://localhost:5000"
+		endpoint := randomEndpoint()
 
 		builder := PATCH(ctx, endpoint)
 
@@ -71,7 +77,7 @@ func Test_CreatesRequestBuilder(t *testing.T) {
 		t.Parallel()
 
 		ctx := context.Background()
-		endpoint := "http://localhost:5000"
+		endpoint := randomEndpoint()
 
 		builder := PUT(ctx, endpoint)
 
@@ -182,13 +188,45 @@ func Test_ResponseBuilder_Request(t *testing.T) {
 		t.Parallel()
 
 		ctx := context.Background()
-		endpoint := "https://api.github.com/users/poorlydefinedbehaviour/repos"
+		endpoint := randomEndpoint()
 
 		request := GET(ctx, endpoint).Build().Request()
 
 		assert.Equal(t, ctx, request.Context())
 		assert.Equal(t, http.MethodGet, request.Method)
 		assert.Equal(t, endpoint, request.URL.String())
+	})
+}
+
+func Test_ResponseBuilder_Response(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns the http response", func(t *testing.T) {
+		t.Parallel()
+
+		defer gock.Off()
+
+		payload := "hello world"
+		endpoint := randomEndpoint()
+
+		gock.New(endpoint).
+			Get("/").
+			Reply(200).
+			Body(strings.NewReader(payload))
+
+		ctx := context.Background()
+
+		response, err := GET(ctx, endpoint).Build().Response()
+
+		assert.NoError(t, err)
+
+		assert.Equal(t, http.StatusOK, response.StatusCode)
+
+		responseBody, err := ioutil.ReadAll(response.Body)
+
+		assert.NoError(t, err)
+
+		assert.EqualValues(t, payload, responseBody)
 	})
 }
 
@@ -212,7 +250,7 @@ func Test_ResponseBuilder_Text(t *testing.T) {
 
 		defer gock.Off()
 
-		const endpoint = "http://foo.com"
+		endpoint := randomEndpoint()
 
 		gock.New(endpoint).
 			Get("/").
@@ -249,7 +287,7 @@ func Test_ResponseBuilder_Bytes(t *testing.T) {
 
 		defer gock.Off()
 
-		const endpoint = "http://foo.com"
+		endpoint := randomEndpoint()
 
 		gock.New(endpoint).
 			Get("/").
@@ -288,7 +326,7 @@ func Test_ResponseBuilder_JSON(t *testing.T) {
 
 		defer gock.Off()
 
-		const endpoint = "http://foo.com/adds/accept/header"
+		endpoint := randomEndpoint()
 
 		gock.New(endpoint).
 			Get("/").
@@ -312,7 +350,7 @@ func Test_ResponseBuilder_JSON(t *testing.T) {
 
 		defer gock.Off()
 
-		const endpoint = "http://foo.com/response/body/as/json"
+		endpoint := randomEndpoint()
 
 		expected := map[string]string{"foo": "bar"}
 

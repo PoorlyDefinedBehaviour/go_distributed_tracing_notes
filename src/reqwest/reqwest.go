@@ -101,22 +101,31 @@ type ResponseBuilder struct {
 	err      error
 }
 
-func (builder *ResponseBuilder) Request() *http.Request {
-	return builder.request
-}
-
 func (builder *ResponseBuilder) makeRequest() {
 	if builder.err != nil {
 		return
 	}
 
 	response, err := builder.client.Do(builder.request)
-
 	if err != nil {
 		builder.err = errors.WithStack(err)
 	}
 
 	builder.response = response
+}
+
+func (builder *ResponseBuilder) Request() *http.Request {
+	return builder.request
+}
+
+func (builder *ResponseBuilder) Response() (*http.Response, error) {
+	builder.makeRequest()
+
+	if builder.err != nil {
+		return builder.response, errors.WithStack(builder.err)
+	}
+
+	return builder.response, nil
 }
 
 func (builder *ResponseBuilder) Bytes() ([]byte, error) {

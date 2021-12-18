@@ -128,7 +128,7 @@ func Test_PureRequestBuilder_Query(t *testing.T) {
 			"key2": {"value1", "value2"},
 		}
 
-		assert.EqualValues(t, expected, request.URL.Query())
+		assert.Equal(t, expected.Encode(), request.URL.RawQuery)
 	})
 }
 

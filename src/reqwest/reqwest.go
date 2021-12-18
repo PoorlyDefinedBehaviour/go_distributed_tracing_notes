@@ -21,49 +21,40 @@ type RequestBuilder struct {
 	response *http.Response
 	query    url.Values
 	err      error
-	headers  map[string][]string
-}
-
-func (builder *RequestBuilder) makeRequest() {
-	if builder.err != nil {
-		return
-	}
-
-	response, err := builder.client.Do(builder.request)
-
-	builder.err = err
-	builder.response = response
+	headers  http.Header
 }
 
 func (builder *RequestBuilder) Header(key, value string) *RequestBuilder {
-	if builder.headers == nil {
-		builder.headers = make(map[string][]string)
-	}
-
 	builder.headers[key] = append(builder.headers[key], value)
 
 	return builder
 }
 
 func (builder *RequestBuilder) Build() *ResponseBuilder {
-	out := &ResponseBuilder{requestBuilder: builder}
+	out := &ResponseBuilder{
+		client: builder.client,
+	}
 
 	if builder.err != nil {
-		out.requestBuilder.err = errors.WithStack(builder.err)
+		out.err = errors.WithStack(builder.err)
 		return out
 	}
 
 	req, err := http.NewRequest(builder.method, builder.endpoint, nil)
 	if err != nil {
-		out.requestBuilder.err = errors.WithStack(err)
+		out.err = errors.WithStack(err)
 		return out
 	}
 
 	req = req.WithContext(builder.ctx)
 
-	req.Header = builder.headers
+	if len(builder.headers) > 0 {
+		req.Header = builder.headers
+	}
 
-	return &ResponseBuilder{requestBuilder: builder, request: req}
+	out.request = req
+
+	return out
 }
 
 type ImpureRequestBuilder struct {
@@ -83,7 +74,7 @@ func (builder *ImpureRequestBuilder) JSON(body interface{}) *ImpureRequestBuilde
 
 	builder.Header("content-type", "application/json")
 
-	builder.makeRequest()
+	// builder.makeRequest()
 
 	if builder.err != nil {
 		return builder
@@ -101,26 +92,68 @@ func (builder *ImpureRequestBuilder) JSON(body interface{}) *ImpureRequestBuilde
 }
 
 type ResponseBuilder struct {
-	requestBuilder *RequestBuilder
-	request        *http.Request
+	client   *http.Client
+	request  *http.Request
+	response *http.Response
+	err      error
 }
 
 func (builder *ResponseBuilder) Request() *http.Request {
 	return builder.request
 }
 
-func (builder *ResponseBuilder) JSON(out interface{}) error {
-	builder.requestBuilder.request.Header.Set("accept", "application/json")
-
-	builder.requestBuilder.makeRequest()
-
-	if builder.requestBuilder.err != nil {
-		return builder.requestBuilder.err
+func (builder *ResponseBuilder) makeRequest() {
+	if builder.err != nil {
+		return
 	}
 
-	defer builder.requestBuilder.response.Body.Close()
+	response, err := builder.client.Do(builder.request)
 
-	body, err := ioutil.ReadAll(builder.requestBuilder.response.Body)
+	if err != nil {
+		builder.err = errors.WithStack(err)
+	}
+
+	builder.response = response
+}
+
+func (builder *ResponseBuilder) Text() (string, error) {
+	builder.makeRequest()
+
+	var out string
+
+	if builder.err != nil {
+		return out, errors.WithStack(builder.err)
+	}
+
+	defer builder.response.Body.Close()
+
+	body, err := ioutil.ReadAll(builder.response.Body)
+	if err != nil {
+		builder.err = errors.WithStack(err)
+		return out, builder.err
+	}
+
+	out = string(body)
+
+	return out, nil
+}
+
+func (builder *ResponseBuilder) JSON(out interface{}) error {
+	if builder.err != nil {
+		return errors.WithStack(builder.err)
+	}
+
+	builder.request.Header.Set("accept", "application/json")
+
+	builder.makeRequest()
+
+	if builder.err != nil {
+		return builder.err
+	}
+
+	defer builder.response.Body.Close()
+
+	body, err := ioutil.ReadAll(builder.response.Body)
 	if err != nil {
 		return err
 	}
@@ -144,6 +177,7 @@ func POST(ctx context.Context, endpoint string) *ImpureRequestBuilder {
 			client:  http.DefaultClient,
 			method:  http.MethodPost,
 			err:     err,
+			headers: make(http.Header, 0),
 		},
 	}
 }

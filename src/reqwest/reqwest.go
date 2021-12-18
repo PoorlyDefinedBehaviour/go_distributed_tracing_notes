@@ -208,6 +208,7 @@ func GET(ctx context.Context, endpoint string) *PureRequestBuilder {
 			client:   http.DefaultClient,
 			method:   http.MethodGet,
 			query:    url.Values{},
+			headers:  make(http.Header, 0),
 		},
 	}
 }

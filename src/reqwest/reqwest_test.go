@@ -11,24 +11,7 @@ import (
 	"gopkg.in/h2non/gock.v1"
 )
 
-func Test_Request(t *testing.T) {
-	t.Parallel()
-
-	t.Run("returns the http request", func(t *testing.T) {
-		t.Parallel()
-
-		ctx := context.Background()
-		endpoint := "https://api.github.com/users/poorlydefinedbehaviour/repos"
-
-		request := GET(ctx, endpoint).Build().Request()
-
-		assert.Equal(t, ctx, request.Context())
-		assert.Equal(t, http.MethodGet, request.Method)
-		assert.Equal(t, endpoint, request.URL.String())
-	})
-}
-
-func Test_Header(t *testing.T) {
+func Test_RequestBuilder_Header(t *testing.T) {
 	t.Parallel()
 
 	t.Run("adds header to request", func(t *testing.T) {
@@ -49,7 +32,24 @@ func Test_Header(t *testing.T) {
 	})
 }
 
-func Test_Text(t *testing.T) {
+func Test_ResponseBuilder_Request(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns the http request", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+		endpoint := "https://api.github.com/users/poorlydefinedbehaviour/repos"
+
+		request := GET(ctx, endpoint).Build().Request()
+
+		assert.Equal(t, ctx, request.Context())
+		assert.Equal(t, http.MethodGet, request.Method)
+		assert.Equal(t, endpoint, request.URL.String())
+	})
+}
+
+func Test_ResponseBuilder_Text(t *testing.T) {
 	t.Parallel()
 
 	t.Run("returns error if an error happened in the process", func(t *testing.T) {
@@ -86,7 +86,7 @@ func Test_Text(t *testing.T) {
 	})
 }
 
-func Test_Bytes(t *testing.T) {
+func Test_ResponseBuilder_Bytes(t *testing.T) {
 	t.Parallel()
 
 	t.Run("returns error if an error happened in the process", func(t *testing.T) {
@@ -123,7 +123,7 @@ func Test_Bytes(t *testing.T) {
 	})
 }
 
-func Test_JSON(t *testing.T) {
+func Test_ResponseBuilder_JSON(t *testing.T) {
 	t.Parallel()
 
 	t.Run("returns error if an error happened in the process", func(t *testing.T) {

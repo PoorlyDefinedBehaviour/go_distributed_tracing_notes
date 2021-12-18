@@ -2,6 +2,8 @@ package reqwest
 
 import (
 	"context"
+	"encoding/json"
+	"io/ioutil"
 	"net/http"
 	"strings"
 	"testing"
@@ -11,7 +13,79 @@ import (
 	"gopkg.in/h2non/gock.v1"
 )
 
-func Test_RequestBuilder_Header(t *testing.T) {
+func Test_CreatesRequestBuilder(t *testing.T) {
+	t.Parallel()
+
+	t.Run("GET", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+		endpoint := "http://localhost:5000"
+
+		builder := GET(ctx, endpoint)
+
+		assert.Equal(t, ctx, builder.ctx)
+		assert.Equal(t, endpoint, builder.endpoint)
+		assert.Equal(t, http.DefaultClient, builder.client)
+		assert.Equal(t, http.MethodGet, builder.method)
+		assert.Empty(t, builder.query)
+		assert.NotNil(t, builder.headers)
+		assert.Nil(t, builder.err)
+	})
+
+	t.Run("POST", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+		endpoint := "http://localhost:5000"
+
+		builder := POST(ctx, endpoint)
+
+		assert.Equal(t, ctx, builder.ctx)
+		assert.Equal(t, endpoint, builder.endpoint)
+		assert.Equal(t, http.DefaultClient, builder.client)
+		assert.Equal(t, http.MethodPost, builder.method)
+		assert.Empty(t, builder.query)
+		assert.NotNil(t, builder.headers)
+		assert.Nil(t, builder.err)
+	})
+
+	t.Run("PATCH", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+		endpoint := "http://localhost:5000"
+
+		builder := PATCH(ctx, endpoint)
+
+		assert.Equal(t, ctx, builder.ctx)
+		assert.Equal(t, endpoint, builder.endpoint)
+		assert.Equal(t, http.DefaultClient, builder.client)
+		assert.Equal(t, http.MethodPatch, builder.method)
+		assert.Empty(t, builder.query)
+		assert.NotNil(t, builder.headers)
+		assert.Nil(t, builder.err)
+	})
+
+	t.Run("PUT", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+		endpoint := "http://localhost:5000"
+
+		builder := PUT(ctx, endpoint)
+
+		assert.Equal(t, ctx, builder.ctx)
+		assert.Equal(t, endpoint, builder.endpoint)
+		assert.Equal(t, http.DefaultClient, builder.client)
+		assert.Equal(t, http.MethodPut, builder.method)
+		assert.Empty(t, builder.query)
+		assert.NotNil(t, builder.headers)
+		assert.Nil(t, builder.err)
+	})
+}
+
+func Test_PureRequestBuilder_Header(t *testing.T) {
 	t.Parallel()
 
 	t.Run("adds header to request", func(t *testing.T) {
@@ -29,6 +103,75 @@ func Test_RequestBuilder_Header(t *testing.T) {
 		}
 
 		assert.EqualValues(t, expected, request.Header)
+	})
+}
+
+func Test_PureRequestBuilder_Body(t *testing.T) {
+	t.Parallel()
+
+	t.Run("adds any io.Reader to request body", func(t *testing.T) {
+		t.Parallel()
+
+		payload := "hello world"
+
+		request := POST(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos").
+			Body(strings.NewReader(payload)).
+			Build().
+			Request()
+
+		requestBody, err := ioutil.ReadAll(request.Body)
+
+		assert.NoError(t, err)
+
+		assert.EqualValues(t, payload, requestBody)
+	})
+}
+
+func Test_ImpureRequestBuilder_Header(t *testing.T) {
+	t.Parallel()
+
+	t.Run("adds header to request", func(t *testing.T) {
+		request := POST(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos").
+			Header("key1", "value1").
+			Header("key2", "value2").
+			Header("key3", "VALUE3").
+			Build().
+			Request()
+
+		expected := map[string][]string{
+			"key1": {"value1"},
+			"key2": {"value2"},
+			"key3": {"VALUE3"},
+		}
+
+		assert.EqualValues(t, expected, request.Header)
+	})
+}
+
+func Test_ImpureRequestBuilder_JSON(t *testing.T) {
+	t.Parallel()
+
+	t.Run("marshals json and adds it to request body", func(t *testing.T) {
+		t.Parallel()
+
+		payload := map[string]string{
+			"hello": "world",
+		}
+
+		request := POST(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos").
+			JSON(payload).
+			Build().
+			Request()
+
+		requestBody, err := ioutil.ReadAll(request.Body)
+
+		assert.NoError(t, err)
+
+		out := make(map[string]string)
+
+		json.Unmarshal(requestBody, &out)
+
+		assert.EqualValues(t, payload, out)
 	})
 }
 
@@ -145,15 +288,14 @@ func Test_ResponseBuilder_JSON(t *testing.T) {
 
 		defer gock.Off()
 
-		const endpoint = "http://foo.com"
+		const endpoint = "http://foo.com/adds/accept/header"
 
 		gock.New(endpoint).
 			Get("/").
 			Reply(200).
 			JSON(map[string]string{})
 
-		builder := GET(context.Background(), endpoint).
-			Build()
+		builder := GET(context.Background(), endpoint).Build()
 
 		out := make(map[string]string, 0)
 		err := builder.JSON(&out)
@@ -170,7 +312,7 @@ func Test_ResponseBuilder_JSON(t *testing.T) {
 
 		defer gock.Off()
 
-		const endpoint = "http://foo.com"
+		const endpoint = "http://foo.com/response/body/as/json"
 
 		expected := map[string]string{"foo": "bar"}
 

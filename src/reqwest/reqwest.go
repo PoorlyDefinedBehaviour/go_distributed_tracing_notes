@@ -22,6 +22,7 @@ type RequestBuilder struct {
 	query    url.Values
 	err      error
 	headers  http.Header
+	body     io.Reader
 }
 
 func (builder *RequestBuilder) Header(key, value string) *RequestBuilder {
@@ -40,7 +41,7 @@ func (builder *RequestBuilder) Build() *ResponseBuilder {
 		return out
 	}
 
-	req, err := http.NewRequest(builder.method, builder.endpoint, nil)
+	req, err := http.NewRequest(builder.method, builder.endpoint, builder.body)
 	if err != nil {
 		out.err = errors.WithStack(err)
 		return out
@@ -61,6 +62,16 @@ type ImpureRequestBuilder struct {
 	RequestBuilder
 }
 
+func (builder *ImpureRequestBuilder) Body(reader io.Reader) *ImpureRequestBuilder {
+	if builder.err != nil {
+		return builder
+	}
+
+	builder.body = reader
+
+	return builder
+}
+
 func (builder *ImpureRequestBuilder) Header(key, value string) *ImpureRequestBuilder {
 	builder.RequestBuilder.Header(key, value)
 
@@ -72,21 +83,13 @@ func (builder *ImpureRequestBuilder) JSON(body interface{}) *ImpureRequestBuilde
 		return builder
 	}
 
-	builder.Header("content-type", "application/json")
-
-	// builder.makeRequest()
-
-	if builder.err != nil {
-		return builder
-	}
-
 	out, err := json.Marshal(body)
 	if err != nil {
-		builder.err = err
+		builder.err = errors.WithStack(err)
 		return builder
 	}
 
-	builder.request.Body = io.NopCloser(bytes.NewBuffer(out))
+	builder.Body(bytes.NewBuffer(out))
 
 	return builder
 }
@@ -174,18 +177,38 @@ func (builder *ResponseBuilder) JSON(out interface{}) error {
 }
 
 func POST(ctx context.Context, endpoint string) *ImpureRequestBuilder {
-	req, err := http.NewRequest(http.MethodPost, endpoint, nil)
-
-	req = req.WithContext(ctx)
-
 	return &ImpureRequestBuilder{
 		RequestBuilder: RequestBuilder{
-			ctx:     ctx,
-			request: req,
-			client:  http.DefaultClient,
-			method:  http.MethodPost,
-			err:     err,
-			headers: make(http.Header, 0),
+			ctx:      ctx,
+			endpoint: endpoint,
+			client:   http.DefaultClient,
+			method:   http.MethodPost,
+			query:    url.Values{},
+			headers:  make(http.Header, 0),
+		},
+	}
+}
+
+func PATCH(ctx context.Context, endpoint string) *ImpureRequestBuilder {
+	return &ImpureRequestBuilder{
+		RequestBuilder: RequestBuilder{
+			ctx:      ctx,
+			endpoint: endpoint,
+			client:   http.DefaultClient,
+			method:   http.MethodPatch,
+			headers:  make(http.Header, 0),
+		},
+	}
+}
+
+func PUT(ctx context.Context, endpoint string) *ImpureRequestBuilder {
+	return &ImpureRequestBuilder{
+		RequestBuilder: RequestBuilder{
+			ctx:      ctx,
+			endpoint: endpoint,
+			client:   http.DefaultClient,
+			method:   http.MethodPut,
+			headers:  make(http.Header, 0),
 		},
 	}
 }
@@ -200,7 +223,6 @@ func (builder *PureRequestBuilder) Header(key, value string) *PureRequestBuilder
 }
 
 func GET(ctx context.Context, endpoint string) *PureRequestBuilder {
-
 	return &PureRequestBuilder{
 		RequestBuilder: RequestBuilder{
 			ctx:      ctx,

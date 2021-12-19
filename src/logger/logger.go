@@ -85,7 +85,7 @@ func (log *logger) Trace(message string) Tracer {
 	zerolog.Info().
 		Caller(1).
 		Str("correlation_id", log.prefix).
-		Msgf("[END - %d(%dms)] %s", time.Now().UnixMilli(), time.Since(start).Milliseconds(), message)
+		Msgf("[END - %d(%dms)] %s", time.Now().UnixMilli(), time.Since(start).Milliseconds(), "[START %d] %s", start.UnixMilli(), message)
 
 	return func() {
 		log.callBeforeEachHandlers(Events.TraceEnd, message)

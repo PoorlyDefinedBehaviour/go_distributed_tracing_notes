@@ -17,20 +17,21 @@ func main() {
 
 	log.Info("test")
 
-	type User struct {
-	}
-
 	repos := make([]map[string]interface{}, 0)
 
-	err := reqwest.GET(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos").
+	response, err := reqwest.GET(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos").
 		Header("key", "value").
-		Build().
-		JSON(&repos)
+		Send()
 	if err != nil {
 		panic(err)
 	}
 
+	if err := response.JSON(&repos); err != nil {
+		panic(err)
+	}
+
 	log.Info(fmt.Sprintf("got %d repos", len(repos)))
+
 }
 
 // A logs using log.Info() -> A::x-rvbr-request-id=d39e1004-f2ae-4883-9ead-2926dd435e26

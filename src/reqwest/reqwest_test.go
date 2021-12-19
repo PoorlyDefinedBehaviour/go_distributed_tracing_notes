@@ -20,6 +20,50 @@ func randomEndpoint() string {
 	return fmt.Sprintf("http://localhost:5000/%s/", datagen.StringWithAlphabetic(10))
 }
 
+func Test_BeforeEach(t *testing.T) {
+	t.Parallel()
+
+	t.Run("does not call interceptors if builder is in error state", func(t *testing.T) {
+		BeforeEach(func(_ *http.Request) {
+			panic("called")
+		})
+
+		responseBuilder := GET(context.Background(), randomEndpoint())
+		responseBuilder.err = errors.New("some error")
+
+		_, _ = responseBuilder.Send()
+
+		beforeEachInterceptors = make([]Interceptor, 0)
+	})
+
+	t.Run("passes request to interceptors before request is sent", func(t *testing.T) {
+		defer gock.Off()
+
+		endpoints := []string{
+			"http://localhost:5000/test_before_each_1",
+			"http://localhost:5000/test_before_each_2",
+			"http://localhost:5000/test_before_each_3",
+		}
+
+		endpointsCalled := make([]string, 0, len(endpoints))
+
+		BeforeEach(func(req *http.Request) {
+			endpointsCalled = append(endpointsCalled, req.URL.String())
+		})
+
+		for _, endpoint := range endpoints {
+			gock.New(endpoint).
+				Get("").
+				Reply(200).
+				Body(strings.NewReader("hello world"))
+
+			_, _ = GET(context.Background(), endpoint).Send()
+		}
+
+		assert.Equal(t, endpoints, endpointsCalled)
+	})
+}
+
 func Test_CreatesRequestBuilder(t *testing.T) {
 	t.Parallel()
 
@@ -96,11 +140,10 @@ func Test_PureRequestBuilder_Header(t *testing.T) {
 	t.Parallel()
 
 	t.Run("adds header to request", func(t *testing.T) {
-		request := GET(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos").
+		request, err := GET(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos").
 			Header("key1", "value1").
 			Header("key2", "value2").
 			Header("key3", "VALUE3").
-			Build().
 			Request()
 
 		expected := map[string][]string{
@@ -109,6 +152,7 @@ func Test_PureRequestBuilder_Header(t *testing.T) {
 			"key3": {"VALUE3"},
 		}
 
+		assert.NoError(t, err)
 		assert.EqualValues(t, expected, request.Header)
 	})
 }
@@ -117,10 +161,9 @@ func Test_PureRequestBuilder_Query(t *testing.T) {
 	t.Parallel()
 
 	t.Run("adds query string to request url", func(t *testing.T) {
-		request := GET(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos").
+		request, err := GET(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos").
 			Query("key1", "value1").
 			Query("key2", []string{"value1", "value2"}).
-			Build().
 			Request()
 
 		expected := url.Values{
@@ -128,6 +171,7 @@ func Test_PureRequestBuilder_Query(t *testing.T) {
 			"key2": {"value1", "value2"},
 		}
 
+		assert.NoError(t, err)
 		assert.Equal(t, expected.Encode(), request.URL.RawQuery)
 	})
 }
@@ -140,10 +184,11 @@ func Test_PureRequestBuilder_Body(t *testing.T) {
 
 		payload := "hello world"
 
-		request := POST(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos").
+		request, err := POST(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos").
 			Body(strings.NewReader(payload)).
-			Build().
 			Request()
+
+		assert.NoError(t, err)
 
 		requestBody, err := ioutil.ReadAll(request.Body)
 
@@ -157,11 +202,10 @@ func Test_ImpureRequestBuilder_Header(t *testing.T) {
 	t.Parallel()
 
 	t.Run("adds header to request", func(t *testing.T) {
-		request := POST(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos").
+		request, err := POST(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos").
 			Header("key1", "value1").
 			Header("key2", "value2").
 			Header("key3", "VALUE3").
-			Build().
 			Request()
 
 		expected := map[string][]string{
@@ -170,6 +214,9 @@ func Test_ImpureRequestBuilder_Header(t *testing.T) {
 			"key3": {"VALUE3"},
 		}
 
+		fmt.Printf("\n\naaaaaaa request %+v\n\n", request)
+
+		assert.NoError(t, err)
 		assert.EqualValues(t, expected, request.Header)
 	})
 }
@@ -184,10 +231,11 @@ func Test_ImpureRequestBuilder_JSON(t *testing.T) {
 			"hello": "world",
 		}
 
-		request := POST(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos").
+		request, err := POST(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos").
 			JSON(payload).
-			Build().
 			Request()
+
+		assert.NoError(t, err)
 
 		requestBody, err := ioutil.ReadAll(request.Body)
 
@@ -201,6 +249,55 @@ func Test_ImpureRequestBuilder_JSON(t *testing.T) {
 	})
 }
 
+func Test_ResponseBuilder_makeRequest(t *testing.T) {
+	t.Parallel()
+
+	t.Run("when response status is not in the 200-299 range", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns custom error", func(t *testing.T) {
+			t.Parallel()
+
+			defer gock.Off()
+
+			for _, status := range []int{103, 300} {
+				endpoint := randomEndpoint()
+
+				gock.New(endpoint).
+					Get("").
+					Reply(status)
+
+				response, err := GET(context.Background(), endpoint).Send()
+
+				assert.True(t, errors.Is(err, ErrUnexpectedResponseStatus))
+				assert.Equal(t, status, response.StatusCode)
+			}
+		})
+
+		t.Run("consumes response body and closes it", func(t *testing.T) {
+			t.Parallel()
+		})
+	})
+}
+
+func Test_ResponseBuilder_Build(t *testing.T) {
+	t.Parallel()
+
+	t.Run("if context has a correlation id, adds it to the request", func(t *testing.T) {
+		t.Parallel()
+
+		requestID := "03823a30-5bf8-4cd9-ac53-d12d18ab6d3d"
+
+		ctx := context.WithValue(context.Background(), CorrelationIDContextKey, requestID)
+
+		request, err := GET(ctx, randomEndpoint()).
+			Request()
+
+		assert.NoError(t, err)
+		assert.Equal(t, request.Header.Get(CorrelationIDHeaderKey), requestID)
+	})
+}
+
 func Test_ResponseBuilder_Request(t *testing.T) {
 	t.Parallel()
 
@@ -210,60 +307,31 @@ func Test_ResponseBuilder_Request(t *testing.T) {
 		ctx := context.Background()
 		endpoint := randomEndpoint()
 
-		request := GET(ctx, endpoint).Build().Request()
+		request, err := GET(ctx, endpoint).Request()
 
+		assert.NoError(t, err)
 		assert.Equal(t, ctx, request.Context())
 		assert.Equal(t, http.MethodGet, request.Method)
 		assert.Equal(t, endpoint, request.URL.String())
 	})
-}
-
-func Test_ResponseBuilder_Response(t *testing.T) {
-	t.Parallel()
-
-	t.Run("returns the http response", func(t *testing.T) {
-		t.Parallel()
-
-		defer gock.Off()
-
-		payload := "hello world"
-		endpoint := randomEndpoint()
-
-		gock.New(endpoint).
-			Get("").
-			Reply(200).
-			Body(strings.NewReader(payload))
-
-		ctx := context.Background()
-
-		response, err := GET(ctx, endpoint).Build().Response()
-
-		assert.NoError(t, err)
-
-		assert.Equal(t, http.StatusOK, response.StatusCode)
-
-		responseBody, err := ioutil.ReadAll(response.Body)
-
-		assert.NoError(t, err)
-
-		assert.EqualValues(t, payload, responseBody)
-	})
-}
-
-func Test_ResponseBuilder_Text(t *testing.T) {
-	t.Parallel()
 
 	t.Run("returns error if an error happened in the process", func(t *testing.T) {
 		t.Parallel()
 
-		builder := GET(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos")
+		builder := GET(context.Background(), randomEndpoint())
+
 		expectedErr := errors.New("some error")
+
 		builder.err = expectedErr
 
-		_, err := builder.Build().Text()
+		_, err := builder.Request()
 
 		assert.True(t, errors.Is(err, expectedErr))
 	})
+}
+
+func Test_Response_Text(t *testing.T) {
+	t.Parallel()
 
 	t.Run("returns response body as text", func(t *testing.T) {
 		t.Parallel()
@@ -277,30 +345,16 @@ func Test_ResponseBuilder_Text(t *testing.T) {
 			Reply(200).
 			JSON(map[string]string{"foo": "bar"})
 
-		body, err := GET(context.Background(), endpoint).
-			Build().
-			Text()
+		response, err := GET(context.Background(), endpoint).Send()
 
 		assert.NoError(t, err)
 
-		assert.JSONEq(t, `{"foo":"bar"}`, body)
+		assert.JSONEq(t, `{"foo":"bar"}`, response.Text())
 	})
 }
 
-func Test_ResponseBuilder_Bytes(t *testing.T) {
+func Test_Response_Bytes(t *testing.T) {
 	t.Parallel()
-
-	t.Run("returns error if an error happened in the process", func(t *testing.T) {
-		t.Parallel()
-
-		builder := GET(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos")
-		expectedErr := errors.New("some error")
-		builder.err = expectedErr
-
-		_, err := builder.Build().Bytes()
-
-		assert.True(t, errors.Is(err, expectedErr))
-	})
 
 	t.Run("returns response body as []byte", func(t *testing.T) {
 		t.Parallel()
@@ -314,34 +368,18 @@ func Test_ResponseBuilder_Bytes(t *testing.T) {
 			Reply(200).
 			Body(strings.NewReader("hello world"))
 
-		body, err := GET(context.Background(), endpoint).
-			Build().
-			Bytes()
+		response, err := GET(context.Background(), endpoint).Send()
 
 		assert.NoError(t, err)
 
-		assert.Equal(t, []byte("hello world"), body)
+		assert.Equal(t, []byte("hello world"), response.Bytes())
 	})
 }
 
-func Test_ResponseBuilder_JSON(t *testing.T) {
+func Test_Response_JSON(t *testing.T) {
 	t.Parallel()
 
-	t.Run("returns error if an error happened in the process", func(t *testing.T) {
-		t.Parallel()
-
-		builder := GET(context.Background(), "https://api.github.com/users/poorlydefinedbehaviour/repos")
-		expectedErr := errors.New("some error")
-		builder.err = expectedErr
-
-		var out interface{}
-
-		err := builder.Build().JSON(&out)
-
-		assert.True(t, errors.Is(err, expectedErr))
-	})
-
-	t.Run("adds accept header to request", func(t *testing.T) {
+	t.Run("returns error if json can be parsed", func(t *testing.T) {
 		t.Parallel()
 
 		defer gock.Off()
@@ -351,18 +389,13 @@ func Test_ResponseBuilder_JSON(t *testing.T) {
 		gock.New(endpoint).
 			Get("").
 			Reply(200).
-			JSON(map[string]string{})
+			Body(strings.NewReader("not json"))
 
-		builder := GET(context.Background(), endpoint).Build()
-
-		out := make(map[string]string, 0)
-		err := builder.JSON(&out)
+		response, err := GET(context.Background(), endpoint).Send()
 
 		assert.NoError(t, err)
-
-		request := builder.Request()
-
-		assert.Equal(t, "application/json", request.Header.Get("accept"))
+		var out interface{}
+		assert.NotNil(t, response.JSON(&out))
 	})
 
 	t.Run("returns response body as json", func(t *testing.T) {
@@ -381,11 +414,11 @@ func Test_ResponseBuilder_JSON(t *testing.T) {
 
 		out := make(map[string]string, 0)
 
-		err := GET(context.Background(), endpoint).
-			Build().
-			JSON(&out)
+		response, err := GET(context.Background(), endpoint).Send()
 
 		assert.NoError(t, err)
+
+		assert.NoError(t, response.JSON(&out))
 
 		assert.Equal(t, expected, out)
 	})

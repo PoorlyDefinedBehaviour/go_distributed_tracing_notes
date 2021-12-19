@@ -12,6 +12,22 @@ import (
 	"github.com/pkg/errors"
 )
 
+type Interceptor = func(*http.Request)
+
+var beforeEachInterceptors []Interceptor
+
+func BeforeEach(interceptor Interceptor) {
+	beforeEachInterceptors = append(beforeEachInterceptors, interceptor)
+}
+
+type ContextKey struct{ Value string }
+
+var CorrelationIDContextKey = &ContextKey{Value: "correlation_id_context_key"}
+
+var CorrelationIDHeaderKey = "x-correlation-id"
+
+var ErrUnexpectedResponseStatus = errors.New("expected response status to be in the 200-299 range")
+
 type RequestBuilder struct {
 	client   *http.Client
 	ctx      context.Context
@@ -44,6 +60,16 @@ func (builder *RequestBuilder) Query(key string, value interface{}) *RequestBuil
 	return builder
 }
 
+func (builder *RequestBuilder) Request() (*http.Request, error) {
+	responseBuilder := builder.Build()
+
+	if responseBuilder.err != nil {
+		return responseBuilder.request, errors.WithStack(responseBuilder.err)
+	}
+
+	return responseBuilder.request, nil
+}
+
 func (builder *RequestBuilder) Build() *ResponseBuilder {
 	out := &ResponseBuilder{
 		client: builder.client,
@@ -66,6 +92,10 @@ func (builder *RequestBuilder) Build() *ResponseBuilder {
 		req.Header = builder.headers
 	}
 
+	if correlationID, ok := builder.ctx.Value(CorrelationIDContextKey).(string); ok {
+		req.Header.Add(CorrelationIDHeaderKey, correlationID)
+	}
+
 	req.URL.RawQuery = builder.query.Encode()
 
 	out.request = req
@@ -73,15 +103,23 @@ func (builder *RequestBuilder) Build() *ResponseBuilder {
 	return out
 }
 
+func (builder *RequestBuilder) Send() (Response, error) {
+	responseBuilder := builder.Build()
+
+	responseBuilder.makeRequest()
+
+	if responseBuilder.err != nil {
+		return responseBuilder.response, errors.WithStack(responseBuilder.err)
+	}
+
+	return responseBuilder.response, nil
+}
+
 type ImpureRequestBuilder struct {
 	RequestBuilder
 }
 
 func (builder *ImpureRequestBuilder) Body(reader io.Reader) *ImpureRequestBuilder {
-	if builder.err != nil {
-		return builder
-	}
-
 	builder.body = reader
 
 	return builder
@@ -112,8 +150,29 @@ func (builder *ImpureRequestBuilder) JSON(body interface{}) *ImpureRequestBuilde
 type ResponseBuilder struct {
 	client   *http.Client
 	request  *http.Request
-	response *http.Response
+	response Response
 	err      error
+}
+
+type Response struct {
+	*http.Response
+	Body []byte
+}
+
+func (response *Response) JSON(out interface{}) error {
+	if err := json.Unmarshal(response.Body, out); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (response *Response) Bytes() []byte {
+	return response.Body
+}
+
+func (response *Response) Text() string {
+	return string(response.Body)
 }
 
 func (builder *ResponseBuilder) makeRequest() {
@@ -121,83 +180,27 @@ func (builder *ResponseBuilder) makeRequest() {
 		return
 	}
 
+	for _, interceptor := range beforeEachInterceptors {
+		interceptor(builder.request)
+	}
+
 	response, err := builder.client.Do(builder.request)
+
+	builder.response = Response{Response: response}
+
 	if err != nil {
 		builder.err = errors.WithStack(err)
+		return
 	}
 
-	builder.response = response
-}
+	body, _ := ioutil.ReadAll(response.Body)
+	builder.response.Body = body
 
-func (builder *ResponseBuilder) Request() *http.Request {
-	return builder.request
-}
+	response.Body.Close()
 
-func (builder *ResponseBuilder) Response() (*http.Response, error) {
-	builder.makeRequest()
-
-	if builder.err != nil {
-		return builder.response, errors.WithStack(builder.err)
+	if response.StatusCode < 200 || response.StatusCode > 299 {
+		builder.err = errors.Wrapf(ErrUnexpectedResponseStatus, "got status %d", response.StatusCode)
 	}
-
-	return builder.response, nil
-}
-
-func (builder *ResponseBuilder) Bytes() ([]byte, error) {
-	builder.makeRequest()
-
-	var out []byte
-
-	if builder.err != nil {
-		return out, errors.WithStack(builder.err)
-	}
-
-	defer builder.response.Body.Close()
-
-	out, err := ioutil.ReadAll(builder.response.Body)
-	if err != nil {
-		builder.err = errors.WithStack(err)
-		return out, builder.err
-	}
-
-	return out, nil
-}
-
-func (builder *ResponseBuilder) Text() (string, error) {
-	out, err := builder.Bytes()
-	if err != nil {
-		builder.err = errors.WithStack(err)
-		return string(out), builder.err
-	}
-
-	return string(out), nil
-}
-
-func (builder *ResponseBuilder) JSON(out interface{}) error {
-	if builder.err != nil {
-		return errors.WithStack(builder.err)
-	}
-
-	builder.request.Header.Set("accept", "application/json")
-
-	builder.makeRequest()
-
-	if builder.err != nil {
-		return builder.err
-	}
-
-	defer builder.response.Body.Close()
-
-	body, err := ioutil.ReadAll(builder.response.Body)
-	if err != nil {
-		return err
-	}
-
-	if err := json.Unmarshal(body, out); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func POST(ctx context.Context, endpoint string) *ImpureRequestBuilder {

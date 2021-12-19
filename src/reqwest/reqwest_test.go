@@ -17,7 +17,7 @@ import (
 )
 
 func randomEndpoint() string {
-	return fmt.Sprintf("http://localhost:500/users/%d", datagen.ID())
+	return fmt.Sprintf("http://localhost:5000/%s/", datagen.StringWithAlphabetic(10))
 }
 
 func Test_CreatesRequestBuilder(t *testing.T) {
@@ -230,7 +230,7 @@ func Test_ResponseBuilder_Response(t *testing.T) {
 		endpoint := randomEndpoint()
 
 		gock.New(endpoint).
-			Get("/").
+			Get("").
 			Reply(200).
 			Body(strings.NewReader(payload))
 
@@ -273,7 +273,7 @@ func Test_ResponseBuilder_Text(t *testing.T) {
 		endpoint := randomEndpoint()
 
 		gock.New(endpoint).
-			Get("/").
+			Get("").
 			Reply(200).
 			JSON(map[string]string{"foo": "bar"})
 
@@ -310,7 +310,7 @@ func Test_ResponseBuilder_Bytes(t *testing.T) {
 		endpoint := randomEndpoint()
 
 		gock.New(endpoint).
-			Get("/").
+			Get("").
 			Reply(200).
 			Body(strings.NewReader("hello world"))
 
@@ -349,7 +349,7 @@ func Test_ResponseBuilder_JSON(t *testing.T) {
 		endpoint := randomEndpoint()
 
 		gock.New(endpoint).
-			Get("/").
+			Get("").
 			Reply(200).
 			JSON(map[string]string{})
 
@@ -375,7 +375,7 @@ func Test_ResponseBuilder_JSON(t *testing.T) {
 		expected := map[string]string{"foo": "bar"}
 
 		gock.New(endpoint).
-			Get("/").
+			Get("").
 			Reply(200).
 			JSON(expected)
 
